@@ -1,10 +1,11 @@
 from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
-from langchain_openai import OpenAIEmbeddings
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnableLambda, RunnablePassthrough
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 
 load_dotenv()
-
 
 documents = [
     Document(
@@ -31,9 +32,24 @@ documents = [
 
 vector_store = Chroma.from_documents(documents, embedding=OpenAIEmbeddings())
 
-if __name__ == "__main__":
-    print(vector_store.similarity_search("cat"))
-    print(vector_store.similarity_search_with_score("cat"))
+retriever = RunnableLambda(vector_store.similarity_search).bind(k=1)
 
-    embedding = OpenAIEmbeddings().embed_query("cat")
-    print(vector_store.similarity_search_by_vector(embedding))
+llm = ChatOpenAI(model="gpt-3.5-turbo")
+
+message = """
+Answer this question using the provided context only.
+
+{question}
+
+Context:
+
+{context}
+"""
+
+prompt = ChatPromptTemplate.from_messages([("human", message)])
+
+chain = {"context": retriever, "question": RunnablePassthrough()} | prompt | llm
+
+if __name__ == "__main__":
+    response = chain.invoke("tell me about cats")
+    print(response.content)
